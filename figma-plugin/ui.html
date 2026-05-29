@@ -273,48 +273,40 @@
     }
   });
 
-  placeBtn.addEventListener('click', async () => {
+  placeBtn.addEventListener('click', () => {
     if (selected.size === 0) return;
 
     const proxy   = proxyInput.value.trim().replace(/\/$/, '');
     const toPlace = photos.filter(p => selected.has(p.index));
 
     placeBtn.disabled    = true;
-    placeBtn.textContent = '⏳ Downloading images...';
+    placeBtn.textContent = '⏳ Placing images...';
+    setStatus(`Placing ${toPlace.length} image${toPlace.length !== 1 ? 's' : ''}...`);
 
-    const images = [];
-    for (const photo of toPlace) {
-      try {
-        setStatus(`Downloading photo ${photo.index} of ${toPlace.length}...`);
-        const fetchUrl = proxy
-          ? `${proxy}/image?url=${encodeURIComponent(photo.fullUrl)}`
-          : photo.fullUrl;
-        const res = await fetch(fetchUrl);
-        if (!res.ok) throw new Error(`HTTP ${res.status} for photo ${photo.index}`);
-        const buffer = await res.arrayBuffer();
-        images.push({ index: photo.index, bytes: Array.from(new Uint8Array(buffer)) });
-      } catch (err) {
-        setStatus(`Failed to download photo ${photo.index}: ${err.message}`, 'error');
-        placeBtn.disabled    = false;
-        placeBtn.textContent = '📌 Place Selected Photos on Board';
-        return;
-      }
-    }
-
-    setStatus('Placing images on board...');
-    parent.postMessage({ pluginMessage: { type: 'place-images', images } }, '*');
+    // Send URLs only — code.js fetches bytes in the plugin sandbox where there
+    // are no mixed-content restrictions and no postMessage size limits.
+    const images = toPlace.map(p => ({ index: p.index, fullUrl: p.fullUrl }));
+    parent.postMessage({ pluginMessage: { type: 'place-images', proxy, images } }, '*');
   });
+
+  let placedCount = 0;
+  let placeTotal  = 0;
 
   window.onmessage = (event) => {
     const msg = event.data.pluginMessage;
     if (!msg) return;
 
-    // Populate proxy URL field from figma.clientStorage on startup
     if (msg.type === 'init') {
       proxyInput.value = msg.proxyUrl;
     }
 
+    if (msg.type === 'image-placed') {
+      placedCount++;
+      setStatus(`Placing… ${placedCount} / ${placeTotal}`);
+    }
+
     if (msg.type === 'done') {
+      placedCount = 0;
       setStatus(`✅ ${msg.count} image${msg.count !== 1 ? 's' : ''} placed on board!`, 'success');
       placeBtn.disabled    = selected.size === 0;
       placeBtn.textContent = '📌 Place Selected Photos on Board';
@@ -322,9 +314,16 @@
 
     if (msg.type === 'image-error') {
       setStatus(`⚠️ Photo ${msg.index} failed: ${msg.error}`, 'error');
-      placeBtn.disabled = selected.size === 0;
+      placeBtn.disabled    = selected.size === 0;
+      placeBtn.textContent = '📌 Place Selected Photos on Board';
     }
   };
+
+  // Set placeTotal before sending so progress display is correct
+  placeBtn.addEventListener('click', () => {
+    placeTotal  = selected.size;
+    placedCount = 0;
+  }, true); // capture phase — runs before the main handler
 </script>
 </body>
 </html>

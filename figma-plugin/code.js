@@ -1,4 +1,4 @@
-// Runs in Figma's plugin sandbox
+// Runs in Figma's plugin sandbox — no mixed-content rules, can fetch any URL
 figma.showUI(__html__, { width: 400, height: 540, title: 'KP Photo Picker' });
 
 // Send persisted proxy URL to UI on startup
@@ -8,14 +8,14 @@ figma.clientStorage.getAsync('proxyUrl').then(url => {
 
 figma.ui.onmessage = async (msg) => {
 
-  // Persist proxy URL whenever it changes
   if (msg.type === 'save-proxy-url') {
     await figma.clientStorage.setAsync('proxyUrl', msg.url);
   }
 
-  // Receive image bytes from ui.html and place them on the canvas
+  // Fetch images here in the plugin sandbox (no mixed-content restrictions,
+  // no User-Agent issues for localhost proxy). ui.html sends URLs, not bytes.
   if (msg.type === 'place-images') {
-    const { images } = msg; // array of { index, bytes: number[] }
+    const { proxy, images } = msg; // images = [{ index, fullUrl }]
     const nodes = [];
     const SPACING = 20;
     const SIZE = 400;
@@ -26,7 +26,16 @@ figma.ui.onmessage = async (msg) => {
 
     for (const img of images) {
       try {
-        const figmaImage = figma.createImage(new Uint8Array(img.bytes));
+        const fetchUrl = proxy
+          ? `${proxy}/image?url=${encodeURIComponent(img.fullUrl)}`
+          : img.fullUrl;
+
+        const response = await fetch(fetchUrl);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const arrayBuffer = await response.arrayBuffer();
+        const figmaImage = figma.createImage(new Uint8Array(arrayBuffer));
+
         const rect = figma.createRectangle();
         rect.resize(SIZE, SIZE);
         rect.x = x;
@@ -40,6 +49,8 @@ figma.ui.onmessage = async (msg) => {
         figma.currentPage.appendChild(rect);
         nodes.push(rect);
         x += SIZE + SPACING;
+
+        figma.ui.postMessage({ type: 'image-placed', index: img.index, done: false });
       } catch (err) {
         figma.ui.postMessage({ type: 'image-error', index: img.index, error: err.message });
       }

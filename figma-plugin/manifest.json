@@ -1,0 +1,16 @@
+{
+  "name": "KP Photo Picker",
+  "id": "kp-photo-picker",
+  "api": "1.0.0",
+  "main": "code.js",
+  "ui": "ui.html",
+  "editorType": [
+    "figma"
+  ],
+  "networkAccess": {
+    "allowedDomains": [
+      "*"
+    ],
+    "reasoning": "Fetches KupujemProdajem listing pages and photos directly from images.kupujemprodajem.com to place them on the Figma canvas — no proxy required."
+  }
+}

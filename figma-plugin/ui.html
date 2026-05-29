@@ -139,43 +139,20 @@
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    display: flex;
+    display: none;
     align-items: center;
     justify-content: center;
-    display: none;
   }
 
   .thumb-wrap.selected .check-badge { display: flex; }
 
   .section { margin-bottom: 14px; }
-
-  .proxy-note {
-    font-size: 11px;
-    color: #555;
-    margin-top: 12px;
-    text-align: center;
-  }
-
-  .proxy-note a { color: #18a0fb; text-decoration: none; }
-
-  #proxyUrl {
-    font-size: 11px;
-    color: #555;
-    margin-bottom: 4px;
-  }
 </style>
 </head>
 <body>
 
 <h2><span>🐾</span> KP Photo Picker</h2>
 
-<!-- Proxy URL config -->
-<div class="section">
-  <label>Proxy Server URL</label>
-  <input type="text" id="proxyInput" placeholder="https://xxxx.trycloudflare.com" />
-</div>
-
-<!-- Listing URL -->
 <div class="section">
   <label>KupujemProdajem Listing URL</label>
   <input type="text" id="listingUrl" placeholder="https://www.kupujemprodajem.com/...oglas/..." />
@@ -185,28 +162,19 @@
 
 <div class="status" id="status"></div>
 
-<!-- Thumbnails grid -->
 <div class="thumbnails" id="thumbGrid"></div>
 
-<!-- Place button -->
 <button id="placeBtn" disabled>📌 Place Selected Photos on Board</button>
 
-<p class="proxy-note">First time? <a href="#" id="proxyHelp">How to set up your proxy →</a></p>
-
 <script>
-  const proxyInput = document.getElementById('proxyInput');
   const listingUrlInput = document.getElementById('listingUrl');
   const fetchBtn = document.getElementById('fetchBtn');
   const placeBtn = document.getElementById('placeBtn');
   const status = document.getElementById('status');
   const thumbGrid = document.getElementById('thumbGrid');
 
-  // Pre-fill proxy URL
-  const saved = localStorage.getItem('kp-proxy-url');
-  proxyInput.value = saved || '';
-
-  let photos = []; // all fetched photos
-  let selected = new Set(); // selected indices
+  let photos = [];
+  let selected = new Set();
 
   function setStatus(msg, type = '') {
     status.textContent = msg;
@@ -215,11 +183,9 @@
 
   function updatePlaceBtn() {
     placeBtn.disabled = selected.size === 0;
-    if (selected.size > 0) {
-      placeBtn.textContent = `📌 Place ${selected.size} Photo${selected.size > 1 ? 's' : ''} on Board`;
-    } else {
-      placeBtn.textContent = '📌 Place Selected Photos on Board';
-    }
+    placeBtn.textContent = selected.size > 0
+      ? `📌 Place ${selected.size} Photo${selected.size > 1 ? 's' : ''} on Board`
+      : '📌 Place Selected Photos on Board';
   }
 
   function renderThumbs() {
@@ -227,10 +193,9 @@
     photos.forEach((photo) => {
       const wrap = document.createElement('div');
       wrap.className = 'thumb-wrap' + (selected.has(photo.index) ? ' selected' : '');
-      wrap.dataset.index = photo.index;
 
       const img = document.createElement('img');
-      img.src = photo.thumbnail; // thumbnail loads through proxy
+      img.src = photo.url;
       img.alt = `Photo ${photo.index}`;
       img.onerror = () => { img.src = ''; wrap.style.background = '#333'; };
 
@@ -261,53 +226,25 @@
     });
   }
 
-  fetchBtn.addEventListener('click', async () => {
-    const proxy = proxyInput.value.trim().replace(/\/$/, '');
+  fetchBtn.addEventListener('click', () => {
     const listingUrl = listingUrlInput.value.trim();
-
-    if (!proxy) { setStatus('Please enter the tunnel URL first.', 'error'); return; }
     if (!listingUrl) { setStatus('Please enter a KupujemProdajem listing URL.', 'error'); return; }
 
-    localStorage.setItem('kp-proxy-url', proxy);
     fetchBtn.disabled = true;
     fetchBtn.textContent = '⏳ Loading...';
     setStatus('Fetching photos from listing...');
     thumbGrid.innerHTML = '';
+    photos = [];
     selected.clear();
     updatePlaceBtn();
 
-    try {
-      const res = await fetch(`${proxy}/photos?url=${encodeURIComponent(listingUrl)}`);
-      const data = await res.json();
-
-      if (!res.ok || data.error) {
-        throw new Error(data.error || 'Unknown error');
-      }
-
-      photos = data.photos.map(p => ({
-        ...p,
-        // Load thumbnails through proxy too so they're not CORS-blocked
-        thumbnail: `${proxy}/image?url=${encodeURIComponent(p.thumbnail)}`,
-        proxyFull: `${proxy}/image?url=${encodeURIComponent(p.full)}`,
-      }));
-
-      setStatus(`Found ${photos.length} photos. Click to select.`, 'success');
-      renderThumbs();
-
-    } catch (err) {
-      setStatus('Error: ' + err.message, 'error');
-    } finally {
-      fetchBtn.disabled = false;
-      fetchBtn.textContent = '🔍 Load Photos';
-    }
+    parent.postMessage({ pluginMessage: { type: 'fetch-photos', url: listingUrl } }, '*');
   });
 
   placeBtn.addEventListener('click', () => {
     if (selected.size === 0) return;
 
-    const toPlace = photos
-      .filter(p => selected.has(p.index))
-      .map(p => ({ index: p.index, proxyUrl: p.proxyFull }));
+    const toPlace = photos.filter(p => selected.has(p.index));
 
     placeBtn.disabled = true;
     placeBtn.textContent = '⏳ Placing images...';
@@ -316,20 +253,33 @@
     parent.postMessage({ pluginMessage: { type: 'place-images', images: toPlace } }, '*');
   });
 
-  // Listen for messages from plugin code
   window.onmessage = (event) => {
     const msg = event.data.pluginMessage;
     if (!msg) return;
 
+    if (msg.type === 'photos') {
+      photos = msg.photos;
+      setStatus(`Found ${photos.length} photo${photos.length !== 1 ? 's' : ''}. Click to select.`, 'success');
+      renderThumbs();
+      fetchBtn.disabled = false;
+      fetchBtn.textContent = '🔍 Load Photos';
+    }
+
+    if (msg.type === 'fetch-error') {
+      setStatus('Error: ' + msg.error, 'error');
+      fetchBtn.disabled = false;
+      fetchBtn.textContent = '🔍 Load Photos';
+    }
+
     if (msg.type === 'done') {
-      setStatus(`✅ ${msg.count} image${msg.count > 1 ? 's' : ''} placed on board!`, 'success');
-      placeBtn.disabled = false;
-      placeBtn.textContent = `📌 Place Selected Photos on Board`;
+      setStatus(`✅ ${msg.count} image${msg.count !== 1 ? 's' : ''} placed on board!`, 'success');
+      placeBtn.disabled = selected.size === 0;
+      placeBtn.textContent = '📌 Place Selected Photos on Board';
     }
 
     if (msg.type === 'image-error') {
       setStatus(`⚠️ Photo ${msg.index} failed: ${msg.error}`, 'error');
-      placeBtn.disabled = false;
+      placeBtn.disabled = selected.size === 0;
     }
   };
 </script>

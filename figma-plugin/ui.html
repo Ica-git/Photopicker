@@ -153,6 +153,13 @@
 
 <h2><span>🐾</span> KP Photo Picker</h2>
 
+<!-- Proxy URL (optional — leave empty to fetch KP directly) -->
+<div class="section">
+  <label>Proxy Server URL</label>
+  <input type="text" id="proxyInput" placeholder="http://localhost:3000 (or leave empty)" />
+</div>
+
+<!-- Listing URL -->
 <div class="section">
   <label>KupujemProdajem Listing URL</label>
   <input type="text" id="listingUrl" placeholder="https://www.kupujemprodajem.com/...oglas/..." />
@@ -167,12 +174,17 @@
 <button id="placeBtn" disabled>📌 Place Selected Photos on Board</button>
 
 <script>
+  const proxyInput   = document.getElementById('proxyInput');
   const listingUrlInput = document.getElementById('listingUrl');
-  const fetchBtn = document.getElementById('fetchBtn');
-  const placeBtn = document.getElementById('placeBtn');
-  const status = document.getElementById('status');
-  const thumbGrid = document.getElementById('thumbGrid');
+  const fetchBtn     = document.getElementById('fetchBtn');
+  const placeBtn     = document.getElementById('placeBtn');
+  const status       = document.getElementById('status');
+  const thumbGrid    = document.getElementById('thumbGrid');
 
+  // Restore saved proxy URL, fall back to localhost default
+  proxyInput.value = localStorage.getItem('kp-proxy-url') || 'http://localhost:3000';
+
+  // photos = [{ index, thumbUrl, fullUrl }]
   let photos = [];
   let selected = new Set();
 
@@ -195,7 +207,7 @@
       wrap.className = 'thumb-wrap' + (selected.has(photo.index) ? ' selected' : '');
 
       const img = document.createElement('img');
-      img.src = photo.url;
+      img.src = photo.thumbUrl;
       img.alt = `Photo ${photo.index}`;
       img.onerror = () => { img.src = ''; wrap.style.background = '#333'; };
 
@@ -226,13 +238,13 @@
     });
   }
 
-  // Fetch the KP listing page HTML directly from the browser iframe.
-  // The iframe runs in Figma's Electron/Chrome environment so the browser
-  // sends a real User-Agent automatically — no custom headers needed.
   fetchBtn.addEventListener('click', async () => {
+    const proxy      = proxyInput.value.trim().replace(/\/$/, '');
     const listingUrl = listingUrlInput.value.trim();
+
     if (!listingUrl) { setStatus('Please enter a KupujemProdajem listing URL.', 'error'); return; }
 
+    localStorage.setItem('kp-proxy-url', proxy);
     fetchBtn.disabled = true;
     fetchBtn.textContent = '⏳ Loading...';
     setStatus('Fetching photos from listing...');
@@ -242,22 +254,30 @@
     updatePlaceBtn();
 
     try {
-      const res = await fetch(listingUrl);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (proxy) {
+        // --- proxy mode: call /photos endpoint ---
+        const res = await fetch(`${proxy}/photos?url=${encodeURIComponent(listingUrl)}`);
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
 
-      const html = await res.text();
+        photos = data.photos.map(p => ({
+          index:    p.index,
+          thumbUrl: `${proxy}/image?url=${encodeURIComponent(p.thumbnail)}`,
+          fullUrl:  p.full,
+        }));
+      } else {
+        // --- direct mode: fetch HTML and parse /big- URLs ---
+        const res = await fetch(listingUrl);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const html = await res.text();
 
-      // Extract all unique /big- image URLs from images.kupujemprodajem.com
-      const regex = /https?:\/\/images\.kupujemprodajem\.com[^"'\s>]+\/big-[^"'\s>]+/g;
-      const matches = html.match(regex) || [];
-      const unique = [...new Set(matches)];
+        const regex = /https?:\/\/images\.kupujemprodajem\.com[^"'\s>]+\/big-[^"'\s>]+/g;
+        const unique = [...new Set(html.match(regex) || [])];
+        if (unique.length === 0) throw new Error('No photos found on this listing page.');
 
-      if (unique.length === 0) {
-        setStatus('No photos found on this listing page.', 'error');
-        return;
+        photos = unique.map((url, i) => ({ index: i + 1, thumbUrl: url, fullUrl: url }));
       }
 
-      photos = unique.map((url, i) => ({ index: i + 1, url }));
       setStatus(`Found ${photos.length} photo${photos.length !== 1 ? 's' : ''}. Click to select.`, 'success');
       renderThumbs();
 
@@ -269,22 +289,24 @@
     }
   });
 
-  // Fetch each selected image as arraybuffer in the browser, then send raw
-  // bytes to code.js which calls figma.createImage() to place on canvas.
   placeBtn.addEventListener('click', async () => {
     if (selected.size === 0) return;
 
-    const toPlace = photos.filter(p => selected.has(p.index));
+    const proxy    = proxyInput.value.trim().replace(/\/$/, '');
+    const toPlace  = photos.filter(p => selected.has(p.index));
 
     placeBtn.disabled = true;
     placeBtn.textContent = '⏳ Downloading images...';
-    setStatus(`Downloading ${toPlace.length} image${toPlace.length !== 1 ? 's' : ''}...`);
 
     const images = [];
     for (const photo of toPlace) {
       try {
         setStatus(`Downloading photo ${photo.index} of ${toPlace.length}...`);
-        const res = await fetch(photo.url);
+        // In proxy mode fetch via /image; in direct mode fetch the URL as-is
+        const fetchUrl = proxy
+          ? `${proxy}/image?url=${encodeURIComponent(photo.fullUrl)}`
+          : photo.fullUrl;
+        const res = await fetch(fetchUrl);
         if (!res.ok) throw new Error(`HTTP ${res.status} for photo ${photo.index}`);
         const buffer = await res.arrayBuffer();
         images.push({ index: photo.index, bytes: Array.from(new Uint8Array(buffer)) });

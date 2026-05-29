@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: Inter, -apple-system, sans-serif;
+    font-size: 13px;
+    background: #1e1e1e;
+    color: #e0e0e0;
+    padding: 16px;
+    min-height: 100vh;
+  }
+
+  h2 {
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  h2 span { font-size: 18px; }
+
+  label {
+    display: block;
+    font-size: 11px;
+    font-weight: 500;
+    color: #999;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+  }
+
+  input[type="text"] {
+    width: 100%;
+    padding: 9px 12px;
+    background: #2c2c2c;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    color: #e0e0e0;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s;
+    margin-bottom: 12px;
+  }
+
+  input[type="text"]:focus { border-color: #18a0fb; }
+  input[type="text"]::placeholder { color: #555; }
+
+  button {
+    width: 100%;
+    padding: 9px;
+    border-radius: 6px;
+    border: none;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button:hover:not(:disabled) { opacity: 0.85; }
+
+  #fetchBtn {
+    background: #18a0fb;
+    color: #fff;
+    margin-bottom: 16px;
+  }
+
+  #placeBtn {
+    background: #1bc47d;
+    color: #fff;
+  }
+
+  .status {
+    font-size: 12px;
+    color: #888;
+    margin-bottom: 12px;
+    min-height: 18px;
+  }
+
+  .status.error { color: #f44; }
+  .status.success { color: #1bc47d; }
+
+  .thumbnails {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin-bottom: 14px;
+    max-height: 270px;
+    overflow-y: auto;
+  }
+
+  .thumb-wrap {
+    position: relative;
+    cursor: pointer;
+    border-radius: 5px;
+    overflow: hidden;
+    border: 2px solid transparent;
+    transition: border-color 0.15s;
+    background: #2c2c2c;
+    aspect-ratio: 1;
+  }
+
+  .thumb-wrap.selected { border-color: #18a0fb; }
+
+  .thumb-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .thumb-num {
+    position: absolute;
+    bottom: 4px;
+    left: 4px;
+    background: rgba(0,0,0,0.7);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  .check-badge {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: #18a0fb;
+    color: #fff;
+    font-size: 10px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    display: none;
+  }
+
+  .thumb-wrap.selected .check-badge { display: flex; }
+
+  .section { margin-bottom: 14px; }
+
+  .proxy-note {
+    font-size: 11px;
+    color: #555;
+    margin-top: 12px;
+    text-align: center;
+  }
+
+  .proxy-note a { color: #18a0fb; text-decoration: none; }
+
+  #proxyUrl {
+    font-size: 11px;
+    color: #555;
+    margin-bottom: 4px;
+  }
+</style>
+</head>
+<body>
+
+<h2><span>🐾</span> KP Photo Picker</h2>
+
+<!-- Proxy URL config -->
+<div class="section">
+  <label>Proxy Server URL</label>
+  <input type="text" id="proxyInput" placeholder="https://your-proxy.onrender.com" />
+</div>
+
+<!-- Listing URL -->
+<div class="section">
+  <label>KupujemProdajem Listing URL</label>
+  <input type="text" id="listingUrl" placeholder="https://www.kupujemprodajem.com/...oglas/..." />
+</div>
+
+<button id="fetchBtn">🔍 Load Photos</button>
+
+<div class="status" id="status"></div>
+
+<!-- Thumbnails grid -->
+<div class="thumbnails" id="thumbGrid"></div>
+
+<!-- Place button -->
+<button id="placeBtn" disabled>📌 Place Selected Photos on Board</button>
+
+<p class="proxy-note">First time? <a href="#" id="proxyHelp">How to set up your proxy →</a></p>
+
+<script>
+  const proxyInput = document.getElementById('proxyInput');
+  const listingUrlInput = document.getElementById('listingUrl');
+  const fetchBtn = document.getElementById('fetchBtn');
+  const placeBtn = document.getElementById('placeBtn');
+  const status = document.getElementById('status');
+  const thumbGrid = document.getElementById('thumbGrid');
+
+  // Pre-fill proxy URL
+  proxyInput.value = 'http://localhost:3000';
+
+  let photos = []; // all fetched photos
+  let selected = new Set(); // selected indices
+
+  function setStatus(msg, type = '') {
+    status.textContent = msg;
+    status.className = 'status ' + type;
+  }
+
+  function updatePlaceBtn() {
+    placeBtn.disabled = selected.size === 0;
+    if (selected.size > 0) {
+      placeBtn.textContent = `📌 Place ${selected.size} Photo${selected.size > 1 ? 's' : ''} on Board`;
+    } else {
+      placeBtn.textContent = '📌 Place Selected Photos on Board';
+    }
+  }
+
+  function renderThumbs() {
+    thumbGrid.innerHTML = '';
+    photos.forEach((photo) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'thumb-wrap' + (selected.has(photo.index) ? ' selected' : '');
+      wrap.dataset.index = photo.index;
+
+      const img = document.createElement('img');
+      img.src = photo.thumbnail; // thumbnail loads through proxy
+      img.alt = `Photo ${photo.index}`;
+      img.onerror = () => { img.src = ''; wrap.style.background = '#333'; };
+
+      const num = document.createElement('div');
+      num.className = 'thumb-num';
+      num.textContent = photo.index;
+
+      const check = document.createElement('div');
+      check.className = 'check-badge';
+      check.textContent = '✓';
+
+      wrap.appendChild(img);
+      wrap.appendChild(num);
+      wrap.appendChild(check);
+
+      wrap.addEventListener('click', () => {
+        if (selected.has(photo.index)) {
+          selected.delete(photo.index);
+          wrap.classList.remove('selected');
+        } else {
+          selected.add(photo.index);
+          wrap.classList.add('selected');
+        }
+        updatePlaceBtn();
+      });
+
+      thumbGrid.appendChild(wrap);
+    });
+  }
+
+  fetchBtn.addEventListener('click', async () => {
+    const proxy = proxyInput.value.trim().replace(/\/$/, '');
+    const listingUrl = listingUrlInput.value.trim();
+
+    if (!proxy) { setStatus('Please enter your proxy server URL first.', 'error'); return; }
+    if (!listingUrl) { setStatus('Please enter a KupujemProdajem listing URL.', 'error'); return; }
+
+    fetchBtn.disabled = true;
+    fetchBtn.textContent = '⏳ Loading...';
+    setStatus('Fetching photos from listing...');
+    thumbGrid.innerHTML = '';
+    selected.clear();
+    updatePlaceBtn();
+
+    try {
+      const res = await fetch(`${proxy}/photos?url=${encodeURIComponent(listingUrl)}`);
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Unknown error');
+      }
+
+      photos = data.photos.map(p => ({
+        ...p,
+        // Load thumbnails through proxy too so they're not CORS-blocked
+        thumbnail: `${proxy}/image?url=${encodeURIComponent(p.thumbnail)}`,
+        proxyFull: `${proxy}/image?url=${encodeURIComponent(p.full)}`,
+      }));
+
+      setStatus(`Found ${photos.length} photos. Click to select.`, 'success');
+      renderThumbs();
+
+    } catch (err) {
+      setStatus('Error: ' + err.message, 'error');
+    } finally {
+      fetchBtn.disabled = false;
+      fetchBtn.textContent = '🔍 Load Photos';
+    }
+  });
+
+  placeBtn.addEventListener('click', () => {
+    if (selected.size === 0) return;
+
+    const toPlace = photos
+      .filter(p => selected.has(p.index))
+      .map(p => ({ index: p.index, proxyUrl: p.proxyFull }));
+
+    placeBtn.disabled = true;
+    placeBtn.textContent = '⏳ Placing images...';
+    setStatus('Downloading and placing images on board...');
+
+    parent.postMessage({ pluginMessage: { type: 'place-images', images: toPlace } }, '*');
+  });
+
+  // Listen for messages from plugin code
+  window.onmessage = (event) => {
+    const msg = event.data.pluginMessage;
+    if (!msg) return;
+
+    if (msg.type === 'done') {
+      setStatus(`✅ ${msg.count} image${msg.count > 1 ? 's' : ''} placed on board!`, 'success');
+      placeBtn.disabled = false;
+      placeBtn.textContent = `📌 Place Selected Photos on Board`;
+    }
+
+    if (msg.type === 'image-error') {
+      setStatus(`⚠️ Photo ${msg.index} failed: ${msg.error}`, 'error');
+      placeBtn.disabled = false;
+    }
+  };
+</script>
+</body>
+</html>

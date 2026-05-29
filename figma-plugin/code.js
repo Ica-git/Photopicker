@@ -6,7 +6,12 @@ figma.ui.onmessage = async (msg) => {
   if (msg.type === 'fetch-photos') {
     try {
       const response = await fetch(msg.url, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'sr,en-US;q=0.7,en;q=0.3',
+          'Referer': 'https://www.kupujemprodajem.com/',
+        }
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
 

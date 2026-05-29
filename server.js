@@ -2,13 +2,9 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const http = require('http');
-const https = require('https');
-const fs = require('fs');
-const path = require('path');
 
 const app = express();
 const HTTP_PORT = process.env.PORT || 3000;
-const HTTPS_PORT = process.env.HTTPS_PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
@@ -97,32 +93,17 @@ app.get('/image', async (req, res) => {
   }
 });
 
-function listen(server, port, label) {
-  server.on('error', (err) => {
-    if (err.code === 'EADDRINUSE') {
-      console.error(`Port ${port} already in use — kill the old process and restart.`);
-      console.error(`  Windows: netstat -ano | findstr :${port}  then  taskkill /PID <pid> /F`);
-      console.error(`  Or just close the other terminal running node server.js`);
-    } else {
-      console.error(`${label} error:`, err.message);
-    }
-  });
-  server.listen(port, () => console.log(`KP Proxy ${label} → http${label === 'HTTPS' ? 's' : ''}://localhost:${port}`));
-}
-
-listen(http.createServer(app), HTTP_PORT, 'HTTP');
-
-// Load mkcert-generated certificate files
-const certFile = path.join(__dirname, 'localhost+1.pem');
-const keyFile  = path.join(__dirname, 'localhost+1-key.pem');
-
-if (fs.existsSync(certFile) && fs.existsSync(keyFile)) {
-  const tlsOptions = {
-    cert: fs.readFileSync(certFile),
-    key:  fs.readFileSync(keyFile),
-  };
-  listen(https.createServer(tlsOptions, app), HTTPS_PORT, 'HTTPS');
-} else {
-  console.warn(`HTTPS disabled — cert files not found.`);
-  console.warn(`Run: mkcert localhost 127.0.0.1`);
-}
+const server = http.createServer(app);
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`Port ${HTTP_PORT} already in use.`);
+    console.error(`Run:  netstat -ano | findstr :${HTTP_PORT}  then  taskkill /PID <pid> /F`);
+  } else {
+    console.error(err.message);
+  }
+});
+server.listen(HTTP_PORT, () => {
+  console.log(`KP Proxy running on http://localhost:${HTTP_PORT}`);
+  console.log(`For Figma: run  cloudflared tunnel --url http://localhost:${HTTP_PORT}`);
+  console.log(`Then paste the https://....trycloudflare.com URL into the plugin.`);
+});

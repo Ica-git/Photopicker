@@ -172,7 +172,7 @@
 <!-- Proxy URL config -->
 <div class="section">
   <label>Proxy Server URL</label>
-  <input type="text" id="proxyInput" placeholder="https://your-proxy.onrender.com" />
+  <input type="text" id="proxyInput" placeholder="https://xxxx.trycloudflare.com" />
 </div>
 
 <!-- Listing URL -->
@@ -202,7 +202,8 @@
   const thumbGrid = document.getElementById('thumbGrid');
 
   // Pre-fill proxy URL
-  proxyInput.value = 'https://localhost:3001';
+  const saved = localStorage.getItem('kp-proxy-url');
+  proxyInput.value = saved || '';
 
   let photos = []; // all fetched photos
   let selected = new Set(); // selected indices
@@ -264,9 +265,10 @@
     const proxy = proxyInput.value.trim().replace(/\/$/, '');
     const listingUrl = listingUrlInput.value.trim();
 
-    if (!proxy) { setStatus('Please enter your proxy server URL first.', 'error'); return; }
+    if (!proxy) { setStatus('Please enter the tunnel URL first.', 'error'); return; }
     if (!listingUrl) { setStatus('Please enter a KupujemProdajem listing URL.', 'error'); return; }
 
+    localStorage.setItem('kp-proxy-url', proxy);
     fetchBtn.disabled = true;
     fetchBtn.textContent = '⏳ Loading...';
     setStatus('Fetching photos from listing...');

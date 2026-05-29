@@ -97,9 +97,20 @@ app.get('/image', async (req, res) => {
   }
 });
 
-http.createServer(app).listen(HTTP_PORT, () => {
-  console.log(`KP Proxy HTTP  → http://localhost:${HTTP_PORT}`);
-});
+function listen(server, port, label) {
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`Port ${port} already in use — kill the old process and restart.`);
+      console.error(`  Windows: netstat -ano | findstr :${port}  then  taskkill /PID <pid> /F`);
+      console.error(`  Or just close the other terminal running node server.js`);
+    } else {
+      console.error(`${label} error:`, err.message);
+    }
+  });
+  server.listen(port, () => console.log(`KP Proxy ${label} → http${label === 'HTTPS' ? 's' : ''}://localhost:${port}`));
+}
+
+listen(http.createServer(app), HTTP_PORT, 'HTTP');
 
 // Load mkcert-generated certificate files
 const certFile = path.join(__dirname, 'localhost+1.pem');
@@ -110,9 +121,7 @@ if (fs.existsSync(certFile) && fs.existsSync(keyFile)) {
     cert: fs.readFileSync(certFile),
     key:  fs.readFileSync(keyFile),
   };
-  https.createServer(tlsOptions, app).listen(HTTPS_PORT, () => {
-    console.log(`KP Proxy HTTPS → https://localhost:${HTTPS_PORT}`);
-  });
+  listen(https.createServer(tlsOptions, app), HTTPS_PORT, 'HTTPS');
 } else {
   console.warn(`HTTPS disabled — cert files not found.`);
   console.warn(`Run: mkcert localhost 127.0.0.1`);

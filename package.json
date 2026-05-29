@@ -4,7 +4,8 @@
   "description": "Proxy server for KupujemProdajem Figma plugin",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "restart": "PowerShell -Command \"netstat -ano | Select-String ':300[01].*LISTENING' | ForEach-Object { $p=($_ -split '\\s+')[-1]; if($p -match '^\\d+$'){taskkill /PID $p /F} }\" & node server.js"
   },
   "dependencies": {
     "axios": "^1.6.0",

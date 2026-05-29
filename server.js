@@ -3,7 +3,8 @@ const cors = require('cors');
 const axios = require('axios');
 const http = require('http');
 const https = require('https');
-const selfsigned = require('selfsigned');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const HTTP_PORT = process.env.PORT || 3000;
@@ -96,26 +97,23 @@ app.get('/image', async (req, res) => {
   }
 });
 
-async function start() {
-  // Generate a self-signed certificate for localhost (selfsigned v5+ is async)
-  const attrs = [{ name: 'commonName', value: 'localhost' }];
-  const pems = await selfsigned.generate(attrs, {
-    keySize: 2048,
-    days: 825,
-    algorithm: 'sha256',
-    extensions: [
-      { name: 'subjectAltName', altNames: [{ type: 2, value: 'localhost' }] },
-    ],
-  });
+http.createServer(app).listen(HTTP_PORT, () => {
+  console.log(`KP Proxy HTTP  → http://localhost:${HTTP_PORT}`);
+});
 
-  http.createServer(app).listen(HTTP_PORT, () => {
-    console.log(`KP Proxy HTTP  → http://localhost:${HTTP_PORT}`);
-  });
+// Load mkcert-generated certificate files
+const certFile = path.join(__dirname, 'localhost+1.pem');
+const keyFile  = path.join(__dirname, 'localhost+1-key.pem');
 
-  https.createServer({ key: pems.private, cert: pems.cert }, app).listen(HTTPS_PORT, () => {
+if (fs.existsSync(certFile) && fs.existsSync(keyFile)) {
+  const tlsOptions = {
+    cert: fs.readFileSync(certFile),
+    key:  fs.readFileSync(keyFile),
+  };
+  https.createServer(tlsOptions, app).listen(HTTPS_PORT, () => {
     console.log(`KP Proxy HTTPS → https://localhost:${HTTPS_PORT}`);
-    console.log(`First time? Visit https://localhost:${HTTPS_PORT} in your browser and accept the certificate.`);
   });
+} else {
+  console.warn(`HTTPS disabled — cert files not found.`);
+  console.warn(`Run: mkcert localhost 127.0.0.1`);
 }
-
-start().catch(err => { console.error('Failed to start:', err); process.exit(1); });

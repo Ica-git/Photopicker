@@ -20,11 +20,22 @@ app.get('/photos', async (req, res) => {
   try {
     const response = await axios.get(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'sr,en-US;q=0.7,en;q=0.3',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'sr-RS,sr;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'Sec-Ch-Ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
       },
-      timeout: 10000,
+      timeout: 15000,
     });
     const html = response.data;
     const bigRegex = /https:\/\/images\.kupujemprodajem\.com\/photos\/oglasi\/[^"'\s]+\/big-[^"'\s]+\.webp/g;
@@ -48,8 +59,12 @@ app.get('/photos', async (req, res) => {
     }
     res.json({ count: photos.length, photos });
   } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ error: 'Failed to fetch listing. Try again.' });
+    const httpStatus = err.response?.status;
+    const detail = err.response?.data
+      ? String(err.response.data).slice(0, 300)
+      : err.message;
+    console.error(`/photos fetch failed: httpStatus=${httpStatus}, detail=${detail}`);
+    res.status(500).json({ error: 'Failed to fetch listing', httpStatus, detail });
   }
 });
 
@@ -77,4 +92,5 @@ app.get('/image', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  co
+  console.log(`KP Proxy server running on port ${PORT}`);
+});

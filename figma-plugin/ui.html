@@ -289,9 +289,6 @@
     parent.postMessage({ pluginMessage: { type: 'place-images', proxy, images } }, '*');
   });
 
-  let placedCount = 0;
-  let placeTotal  = 0;
-
   window.onmessage = (event) => {
     const msg = event.data.pluginMessage;
     if (!msg) return;
@@ -300,30 +297,23 @@
       proxyInput.value = msg.proxyUrl;
     }
 
-    if (msg.type === 'image-placed') {
-      placedCount++;
-      setStatus(`Placing… ${placedCount} / ${placeTotal}`);
+    if (msg.type === 'progress') {
+      setStatus(`Placing ${msg.current} / ${msg.total}…`);
     }
 
     if (msg.type === 'done') {
-      placedCount = 0;
-      setStatus(`✅ ${msg.count} image${msg.count !== 1 ? 's' : ''} placed on board!`, 'success');
+      const errTxt = msg.errorCount > 0 ? ` · ${msg.errorCount} failed` : '';
+      const type   = msg.errorCount > 0 ? '' : 'success';
+      setStatus(`✅ ${msg.count} image${msg.count !== 1 ? 's' : ''} placed on board!${errTxt}`, type);
       placeBtn.disabled    = selected.size === 0;
       placeBtn.textContent = '📌 Place Selected Photos on Board';
     }
 
     if (msg.type === 'image-error') {
-      setStatus(`⚠️ Photo ${msg.index} failed: ${msg.error}`, 'error');
-      placeBtn.disabled    = selected.size === 0;
-      placeBtn.textContent = '📌 Place Selected Photos on Board';
+      // individual errors are summarised in 'done'; no need to replace status mid-run
+      console.warn(`Photo ${msg.index} failed: ${msg.error}`);
     }
   };
-
-  // Set placeTotal before sending so progress display is correct
-  placeBtn.addEventListener('click', () => {
-    placeTotal  = selected.size;
-    placedCount = 0;
-  }, true); // capture phase — runs before the main handler
 </script>
 </body>
 </html>

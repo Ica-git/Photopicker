@@ -1,9 +1,13 @@
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
+const http = require('http');
+const https = require('https');
+const selfsigned = require('selfsigned');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const HTTP_PORT = process.env.PORT || 3000;
+const HTTPS_PORT = process.env.HTTPS_PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
@@ -59,7 +63,6 @@ app.get('/photos', async (req, res) => {
       ? String(err.response.data).slice(0, 200)
       : err.message;
     console.error(`/photos fetch failed: ${httpStatus} - ${detail}`);
-    // 404 from KP means the server IP is blocked by their bot detection — run locally
     res.status(500).json({
       error: httpStatus === 404
         ? 'KP blocked this request (datacenter IP). Run the proxy locally: node server.js'
@@ -93,6 +96,26 @@ app.get('/image', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`KP Proxy running on http://localhost:${PORT}`);
-});
+async function start() {
+  // Generate a self-signed certificate for localhost (selfsigned v5+ is async)
+  const attrs = [{ name: 'commonName', value: 'localhost' }];
+  const pems = await selfsigned.generate(attrs, {
+    keySize: 2048,
+    days: 825,
+    algorithm: 'sha256',
+    extensions: [
+      { name: 'subjectAltName', altNames: [{ type: 2, value: 'localhost' }] },
+    ],
+  });
+
+  http.createServer(app).listen(HTTP_PORT, () => {
+    console.log(`KP Proxy HTTP  → http://localhost:${HTTP_PORT}`);
+  });
+
+  https.createServer({ key: pems.private, cert: pems.cert }, app).listen(HTTPS_PORT, () => {
+    console.log(`KP Proxy HTTPS → https://localhost:${HTTPS_PORT}`);
+    console.log(`First time? Visit https://localhost:${HTTPS_PORT} in your browser and accept the certificate.`);
+  });
+}
+
+start().catch(err => { console.error('Failed to start:', err); process.exit(1); });

@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const http = require('http');
-const { Jimp, JimpMime } = require('jimp');
+const sharp = require('sharp');
 
 const app = express();
 const HTTP_PORT = process.env.PORT || 3000;
@@ -89,25 +89,18 @@ app.get('/image', async (req, res) => {
     const srcBuf = Buffer.from(response.data);
     const contentType = (response.headers['content-type'] || '').toLowerCase();
 
-    // Figma's createImage() only accepts PNG and JPEG — try to convert WebP
-    // (and anything else) to JPEG. If jimp can't decode the variant, fall back
-    // to sending the raw bytes and let Figma decide what to do.
+    // Figma's createImage() only accepts PNG and JPEG — convert everything else
+    // (WebP, AVIF, …) to JPEG using sharp (libvips, full WebP support).
     const isJpeg = contentType.includes('jpeg');
     const isPng  = contentType.includes('png');
     if (!isJpeg && !isPng) {
-      try {
-        const image   = await Jimp.fromBuffer(srcBuf);
-        const jpegBuf = await image.getBuffer(JimpMime.jpeg);
-        res.set('Content-Type', 'image/jpeg');
-        res.set('Cache-Control', 'public, max-age=86400');
-        return res.send(jpegBuf);
-      } catch (convertErr) {
-        console.warn(`[/image] jimp conversion failed (${convertErr.message}), sending raw bytes`);
-        // fall through — send the original bytes unchanged
-      }
+      const jpegBuf = await sharp(srcBuf).jpeg({ quality: 90 }).toBuffer();
+      res.set('Content-Type', 'image/jpeg');
+      res.set('Cache-Control', 'public, max-age=86400');
+      return res.send(jpegBuf);
     }
 
-    res.set('Content-Type', contentType || 'application/octet-stream');
+    res.set('Content-Type', contentType);
     res.set('Cache-Control', 'public, max-age=86400');
     res.send(srcBuf);
   } catch (err) {

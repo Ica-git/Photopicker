@@ -153,13 +153,11 @@
 
 <h2><span>🐾</span> KP Photo Picker</h2>
 
-<!-- Proxy URL (optional — leave empty to fetch KP directly) -->
 <div class="section">
   <label>Proxy Server URL</label>
-  <input type="text" id="proxyInput" placeholder="http://localhost:3000 (or leave empty)" />
+  <input type="text" id="proxyInput" placeholder="http://localhost:3000" />
 </div>
 
-<!-- Listing URL -->
 <div class="section">
   <label>KupujemProdajem Listing URL</label>
   <input type="text" id="listingUrl" placeholder="https://www.kupujemprodajem.com/...oglas/..." />
@@ -174,27 +172,24 @@
 <button id="placeBtn" disabled>📌 Place Selected Photos on Board</button>
 
 <script>
-  const proxyInput   = document.getElementById('proxyInput');
+  const proxyInput      = document.getElementById('proxyInput');
   const listingUrlInput = document.getElementById('listingUrl');
-  const fetchBtn     = document.getElementById('fetchBtn');
-  const placeBtn     = document.getElementById('placeBtn');
-  const status       = document.getElementById('status');
-  const thumbGrid    = document.getElementById('thumbGrid');
-
-  // Restore saved proxy URL, fall back to localhost default
-  proxyInput.value = localStorage.getItem('kp-proxy-url') || 'http://localhost:3000';
+  const fetchBtn        = document.getElementById('fetchBtn');
+  const placeBtn        = document.getElementById('placeBtn');
+  const status          = document.getElementById('status');
+  const thumbGrid       = document.getElementById('thumbGrid');
 
   // photos = [{ index, thumbUrl, fullUrl }]
-  let photos = [];
+  let photos   = [];
   let selected = new Set();
 
   function setStatus(msg, type = '') {
     status.textContent = msg;
-    status.className = 'status ' + type;
+    status.className   = 'status ' + type;
   }
 
   function updatePlaceBtn() {
-    placeBtn.disabled = selected.size === 0;
+    placeBtn.disabled    = selected.size === 0;
     placeBtn.textContent = selected.size > 0
       ? `📌 Place ${selected.size} Photo${selected.size > 1 ? 's' : ''} on Board`
       : '📌 Place Selected Photos on Board';
@@ -207,16 +202,16 @@
       wrap.className = 'thumb-wrap' + (selected.has(photo.index) ? ' selected' : '');
 
       const img = document.createElement('img');
-      img.src = photo.thumbUrl;
-      img.alt = `Photo ${photo.index}`;
+      img.src   = photo.thumbUrl;
+      img.alt   = `Photo ${photo.index}`;
       img.onerror = () => { img.src = ''; wrap.style.background = '#333'; };
 
       const num = document.createElement('div');
-      num.className = 'thumb-num';
+      num.className   = 'thumb-num';
       num.textContent = photo.index;
 
       const check = document.createElement('div');
-      check.className = 'check-badge';
+      check.className   = 'check-badge';
       check.textContent = '✓';
 
       wrap.appendChild(img);
@@ -242,41 +237,30 @@
     const proxy      = proxyInput.value.trim().replace(/\/$/, '');
     const listingUrl = listingUrlInput.value.trim();
 
+    if (!proxy)      { setStatus('Please enter the proxy server URL.', 'error'); return; }
     if (!listingUrl) { setStatus('Please enter a KupujemProdajem listing URL.', 'error'); return; }
 
-    localStorage.setItem('kp-proxy-url', proxy);
-    fetchBtn.disabled = true;
+    // Persist proxy URL via code.js (localStorage is unavailable in Figma's data: iframe)
+    parent.postMessage({ pluginMessage: { type: 'save-proxy-url', url: proxy } }, '*');
+
+    fetchBtn.disabled    = true;
     fetchBtn.textContent = '⏳ Loading...';
     setStatus('Fetching photos from listing...');
-    thumbGrid.innerHTML = '';
-    photos = [];
+    thumbGrid.innerHTML  = '';
+    photos               = [];
     selected.clear();
     updatePlaceBtn();
 
     try {
-      if (proxy) {
-        // --- proxy mode: call /photos endpoint ---
-        const res = await fetch(`${proxy}/photos?url=${encodeURIComponent(listingUrl)}`);
-        const data = await res.json();
-        if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+      const res  = await fetch(`${proxy}/photos?url=${encodeURIComponent(listingUrl)}`);
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
 
-        photos = data.photos.map(p => ({
-          index:    p.index,
-          thumbUrl: `${proxy}/image?url=${encodeURIComponent(p.thumbnail)}`,
-          fullUrl:  p.full,
-        }));
-      } else {
-        // --- direct mode: fetch HTML and parse /big- URLs ---
-        const res = await fetch(listingUrl);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const html = await res.text();
-
-        const regex = /https?:\/\/images\.kupujemprodajem\.com[^"'\s>]+\/big-[^"'\s>]+/g;
-        const unique = [...new Set(html.match(regex) || [])];
-        if (unique.length === 0) throw new Error('No photos found on this listing page.');
-
-        photos = unique.map((url, i) => ({ index: i + 1, thumbUrl: url, fullUrl: url }));
-      }
+      photos = data.photos.map(p => ({
+        index:    p.index,
+        thumbUrl: `${proxy}/image?url=${encodeURIComponent(p.thumbnail)}`,
+        fullUrl:  p.full,
+      }));
 
       setStatus(`Found ${photos.length} photo${photos.length !== 1 ? 's' : ''}. Click to select.`, 'success');
       renderThumbs();
@@ -284,7 +268,7 @@
     } catch (err) {
       setStatus('Error: ' + err.message, 'error');
     } finally {
-      fetchBtn.disabled = false;
+      fetchBtn.disabled    = false;
       fetchBtn.textContent = '🔍 Load Photos';
     }
   });
@@ -292,17 +276,16 @@
   placeBtn.addEventListener('click', async () => {
     if (selected.size === 0) return;
 
-    const proxy    = proxyInput.value.trim().replace(/\/$/, '');
-    const toPlace  = photos.filter(p => selected.has(p.index));
+    const proxy   = proxyInput.value.trim().replace(/\/$/, '');
+    const toPlace = photos.filter(p => selected.has(p.index));
 
-    placeBtn.disabled = true;
+    placeBtn.disabled    = true;
     placeBtn.textContent = '⏳ Downloading images...';
 
     const images = [];
     for (const photo of toPlace) {
       try {
         setStatus(`Downloading photo ${photo.index} of ${toPlace.length}...`);
-        // In proxy mode fetch via /image; in direct mode fetch the URL as-is
         const fetchUrl = proxy
           ? `${proxy}/image?url=${encodeURIComponent(photo.fullUrl)}`
           : photo.fullUrl;
@@ -312,7 +295,7 @@
         images.push({ index: photo.index, bytes: Array.from(new Uint8Array(buffer)) });
       } catch (err) {
         setStatus(`Failed to download photo ${photo.index}: ${err.message}`, 'error');
-        placeBtn.disabled = false;
+        placeBtn.disabled    = false;
         placeBtn.textContent = '📌 Place Selected Photos on Board';
         return;
       }
@@ -326,9 +309,14 @@
     const msg = event.data.pluginMessage;
     if (!msg) return;
 
+    // Populate proxy URL field from figma.clientStorage on startup
+    if (msg.type === 'init') {
+      proxyInput.value = msg.proxyUrl;
+    }
+
     if (msg.type === 'done') {
       setStatus(`✅ ${msg.count} image${msg.count !== 1 ? 's' : ''} placed on board!`, 'success');
-      placeBtn.disabled = selected.size === 0;
+      placeBtn.disabled    = selected.size === 0;
       placeBtn.textContent = '📌 Place Selected Photos on Board';
     }
 

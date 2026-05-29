@@ -226,7 +226,10 @@
     });
   }
 
-  fetchBtn.addEventListener('click', () => {
+  // Fetch the KP listing page HTML directly from the browser iframe.
+  // The iframe runs in Figma's Electron/Chrome environment so the browser
+  // sends a real User-Agent automatically — no custom headers needed.
+  fetchBtn.addEventListener('click', async () => {
     const listingUrl = listingUrlInput.value.trim();
     if (!listingUrl) { setStatus('Please enter a KupujemProdajem listing URL.', 'error'); return; }
 
@@ -238,38 +241,68 @@
     selected.clear();
     updatePlaceBtn();
 
-    parent.postMessage({ pluginMessage: { type: 'fetch-photos', url: listingUrl } }, '*');
+    try {
+      const res = await fetch(listingUrl);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const html = await res.text();
+
+      // Extract all unique /big- image URLs from images.kupujemprodajem.com
+      const regex = /https?:\/\/images\.kupujemprodajem\.com[^"'\s>]+\/big-[^"'\s>]+/g;
+      const matches = html.match(regex) || [];
+      const unique = [...new Set(matches)];
+
+      if (unique.length === 0) {
+        setStatus('No photos found on this listing page.', 'error');
+        return;
+      }
+
+      photos = unique.map((url, i) => ({ index: i + 1, url }));
+      setStatus(`Found ${photos.length} photo${photos.length !== 1 ? 's' : ''}. Click to select.`, 'success');
+      renderThumbs();
+
+    } catch (err) {
+      setStatus('Error: ' + err.message, 'error');
+    } finally {
+      fetchBtn.disabled = false;
+      fetchBtn.textContent = '🔍 Load Photos';
+    }
   });
 
-  placeBtn.addEventListener('click', () => {
+  // Fetch each selected image as arraybuffer in the browser, then send raw
+  // bytes to code.js which calls figma.createImage() to place on canvas.
+  placeBtn.addEventListener('click', async () => {
     if (selected.size === 0) return;
 
     const toPlace = photos.filter(p => selected.has(p.index));
 
     placeBtn.disabled = true;
-    placeBtn.textContent = '⏳ Placing images...';
-    setStatus('Downloading and placing images on board...');
+    placeBtn.textContent = '⏳ Downloading images...';
+    setStatus(`Downloading ${toPlace.length} image${toPlace.length !== 1 ? 's' : ''}...`);
 
-    parent.postMessage({ pluginMessage: { type: 'place-images', images: toPlace } }, '*');
+    const images = [];
+    for (const photo of toPlace) {
+      try {
+        setStatus(`Downloading photo ${photo.index} of ${toPlace.length}...`);
+        const res = await fetch(photo.url);
+        if (!res.ok) throw new Error(`HTTP ${res.status} for photo ${photo.index}`);
+        const buffer = await res.arrayBuffer();
+        images.push({ index: photo.index, bytes: Array.from(new Uint8Array(buffer)) });
+      } catch (err) {
+        setStatus(`Failed to download photo ${photo.index}: ${err.message}`, 'error');
+        placeBtn.disabled = false;
+        placeBtn.textContent = '📌 Place Selected Photos on Board';
+        return;
+      }
+    }
+
+    setStatus('Placing images on board...');
+    parent.postMessage({ pluginMessage: { type: 'place-images', images } }, '*');
   });
 
   window.onmessage = (event) => {
     const msg = event.data.pluginMessage;
     if (!msg) return;
-
-    if (msg.type === 'photos') {
-      photos = msg.photos;
-      setStatus(`Found ${photos.length} photo${photos.length !== 1 ? 's' : ''}. Click to select.`, 'success');
-      renderThumbs();
-      fetchBtn.disabled = false;
-      fetchBtn.textContent = '🔍 Load Photos';
-    }
-
-    if (msg.type === 'fetch-error') {
-      setStatus('Error: ' + msg.error, 'error');
-      fetchBtn.disabled = false;
-      fetchBtn.textContent = '🔍 Load Photos';
-    }
 
     if (msg.type === 'done') {
       setStatus(`✅ ${msg.count} image${msg.count !== 1 ? 's' : ''} placed on board!`, 'success');

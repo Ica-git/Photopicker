@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const http = require('http');
+const { Jimp, JimpMime } = require('jimp');
 
 const app = express();
 const HTTP_PORT = process.env.PORT || 3000;
@@ -84,9 +85,26 @@ app.get('/image', async (req, res) => {
       },
       timeout: 15000,
     });
-    res.set('Content-Type', response.headers['content-type'] || 'image/webp');
+
+    const srcBuf = Buffer.from(response.data);
+    const contentType = (response.headers['content-type'] || '').toLowerCase();
+
+    // Figma's createImage() only accepts PNG and JPEG — convert WebP (and anything
+    // else unrecognised) to JPEG so the plugin can always place the image.
+    const isJpeg = contentType.includes('jpeg');
+    const isPng  = contentType.includes('png');
+    if (!isJpeg && !isPng) {
+      const image  = await Jimp.fromBuffer(srcBuf);
+      image.quality(90);
+      const jpegBuf = await image.getBuffer(JimpMime.jpeg);
+      res.set('Content-Type', 'image/jpeg');
+      res.set('Cache-Control', 'public, max-age=86400');
+      return res.send(jpegBuf);
+    }
+
+    res.set('Content-Type', contentType);
     res.set('Cache-Control', 'public, max-age=86400');
-    res.send(response.data);
+    res.send(srcBuf);
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ error: 'Failed to fetch image' });
